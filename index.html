@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>KREVOX: COSMIC REVENGE [GOD MODE]</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+        
+        body { 
+            margin: 0; 
+            padding: 0; 
+            background: #000; 
+            overflow: hidden; 
+            touch-action: none; 
+            font-family: 'Orbitron', sans-serif;
+            color: #fff;
+            user-select: none;
+        }
+
+        canvas { display: block; }
+
+        /* --- PRE-LOADER & UI --- */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .hud-container {
+            display: flex;
+            justify-content: space-between;
+            padding: 20px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+        }
+
+        .score-box {
+            border-left: 4px solid #00d2ff;
+            padding-left: 10px;
+        }
+
+        .score-box div:first-child { font-size: 10px; color: #00d2ff; letter-spacing: 2px; }
+        .score-box div:last-child { font-size: 24px; font-weight: 900; }
+
+        #warning-overlay {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100%;
+            background: rgba(255, 0, 0, 0.2);
+            padding: 20px 0;
+            text-align: center;
+            border-top: 2px solid red;
+            border-bottom: 2px solid red;
+            color: red;
+            font-size: 30px;
+            font-weight: 900;
+            animation: pulseWarning 0.5s infinite;
+        }
+
+        @keyframes pulseWarning {
+            0% { opacity: 0; }
+            50% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        /* --- BOSS HP UI --- */
+        #boss-hud {
+            display: none;
+            position: absolute;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 70%;
+            text-align: center;
+        }
+
+        .hp-container {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            margin-top: 5px;
+            overflow: hidden;
+            border: 1px solid #fff;
+        }
+
+        #hp-fill {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, #ff0000, #ff7b00);
+            box-shadow: 0 0 10px red;
+            transition: width 0.3s ease;
+        }
+
+        /* --- GAME OVER SCREEN --- */
+        #game-over {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 100;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: all;
+        }
+
+        #game-over h1 { font-size: 40px; color: #ff3e3e; margin-bottom: 0; text-shadow: 0 0 20px red; }
+        #game-over p { font-size: 18px; color: #aaa; margin-top: 10px; }
+        .btn-restart {
+            margin-top: 30px;
+            padding: 15px 40px;
+            background: #00d2ff;
+            color: #000;
+            font-weight: 900;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div class="hud-container">
+            <div class="score-box">
+                <div>DESTRUCTION</div>
+                <div id="score-val">0000</div>
+            </div>
+            <div style="text-align: right;">
+                <div style="font-size: 10px; color: #39ff14;">PILOT RANK</div>
+                <div id="rank-val" style="font-size: 18px; font-weight: 900;">MK-1</div>
+            </div>
+        </div>
+
+        <div id="warning-overlay">⚠ THREAT DETECTED ⚠</div>
+
+        <div id="boss-hud">
+            <div style="font-size: 12px; font-weight: 900; letter-spacing: 2px;">ANNIHILATOR X-1</div>
+            <div class="hp-container">
+                <div id="hp-fill"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="game-over">
+        <h1>MISSION FAILED</h1>
+        <p>Total Score: <span id="final-score">0</span></p>
+        <button class="btn-restart" onclick="location.reload()">Re-Deploy</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // --- GAME STATE ---
+        let score = 0;
+        let gameActive = true;
+        let level = 1;
+        let bossActive = false;
+
+        // --- CLASSES (OOP FOR GITHUB) ---
+
+        class Player {
+            constructor() {
+                this.x = canvas.width / 2;
+                this.y = canvas.height - 100;
+                this.w = 40;
+                this.h = 45;
+                this.speed = 0.15;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                // Engine Glow
+                const gradient = ctx.createRadialGradient(0, 25, 0, 0, 25, 15);
+                gradient.addColorStop(0, 'rgba(0, 210, 255, 0.8)');
+                gradient.addColorStop(1, 'transparent');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(-10, 15, 20, 20);
+
+                // Ship Body
+                ctx.fillStyle = '#00d2ff';
+                ctx.beginPath();
+                ctx.moveTo(0, -25); // Nose
+                ctx.lineTo(-25, 20); // Left wing
+                ctx.lineTo(0, 5);    // Tail indent
+                ctx.lineTo(25, 20);  // Right wing
+                ctx.closePath();
+                ctx.fill();
+                
+                // Cockpit
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(-4, -10, 8, 12);
+                
+                ctx.restore();
+            }
+        }
+
+        class Bullet {
+            constructor(x, y, angle = 0) {
+                this.x = x;
+                this.y = y;
+                this.angle = angle;
+                this.speed = 12;
+            }
+            update() {
+                this.y -= this.speed;
+                this.x += this.angle;
+            }
+            draw() {
+                ctx.fillStyle = '#fff200';
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = 'yellow';
+                ctx.fillRect(this.x - 2, this.y, 4, 15);
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        class Enemy {
+            constructor() {
+                this.x = Math.random() * (canvas.width - 40) + 20;
+                this.y = -50;
+                this.w = 35;
+                this.h = 35;
+                this.speed = 2 + Math.random() * 3;
+            }
+            update() { this.y += this.speed; }
+            draw() {
+                ctx.fillStyle = '#ff4757';
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y + 15);
+                ctx.lineTo(this.x - 18, this.y - 18);
+                ctx.lineTo(this.x + 18, this.y - 18);
+                ctx.fill();
+            }
+        }
+
+        class Boss {
+            constructor() {
+                this.w = 260;
+                this.h = 100;
+                this.x = canvas.width / 2;
+                this.y = -150;
+                this.maxHp = 100 + (level * 50);
+                this.hp = this.maxHp;
+                this.dir = 1;
+            }
+            update() {
+                if (this.y < 100) this.y += 2;
+                this.x += this.dir * 2;
+                if (this.x > canvas.width - 130 || this.x < 130) this.dir *= -1;
+            }
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.fillStyle = '#6c5ce7';
+                ctx.fillRect(-this.w/2, 0, this.w, this.h/2); // Main body
+                ctx.fillStyle = '#a29bfe';
+                ctx.fillRect(-this.w/3, this.h/2, this.w/1.5, 30); // Guns
+                ctx.restore();
+            }
+        }
+
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x; this.y = y;
+                this.vx = (Math.random() - 0.5) * 6;
+                this.vy = (Math.random() - 0.5) * 6;
+                this.size = Math.random() * 4;
+                this.life = 1.0;
+                this.color = color;
+            }
+            update() { this.x += this.vx; this.y += this.vy; this.life -= 0.03; }
+            draw() {
+                ctx.globalAlpha = this.life;
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.size, this.size);
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        // --- OBJECT CONTAINERS ---
+        const pilot = new Player();
+        let bullets = [];
+        let enemies = [];
+        let particles = [];
+        let stars = [];
+        let boss = null;
+
+        for (let i = 0; i < 80; i++) {
+            stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, s: Math.random() * 2 });
+        }
+
+        // --- CONTROLS ---
+        window.addEventListener('touchmove', (e) => {
+            if (!gameActive) return;
+            const touch = e.touches[0];
+            pilot.x += (touch.clientX - pilot.x) * pilot.speed;
+            pilot.y += (touch.clientY - 50 - pilot.y) * pilot.speed;
+        });
+
+        // --- GAME LOOP ---
+        function spawnEnemies() {
+            if (!gameActive || bossActive) return;
+            enemies.push(new Enemy());
+            setTimeout(spawnEnemies, Math.max(300, 1200 - score/10));
+        }
+
+        function createExplosion(x, y, color) {
+            for(let i=0; i<10; i++) particles.push(new Particle(x, y, color));
+        }
+
+        function checkCollision(r1, r2) {
+            return !(r1.x - 20 > r2.x + 20 || r1.x + 20 < r2.x - 20 || r1.y - 20 > r2.y + 20 || r1.y + 20 < r2.y - 20);
+        }
+
+        function update() {
+            if (!gameActive) return;
+
+            // Stars
+            stars.forEach(st => {
+                st.y += 2;
+                if (st.y > canvas.height) st.y = 0;
+            });
+
+            // Particles
+            particles = particles.filter(p => p.life > 0);
+            particles.forEach(p => p.update());
+
+            // Shooting
+            if (Date.now() % 150 < 20) {
+                if (level < 3) bullets.push(new Bullet(pilot.x, pilot.y));
+                else {
+                    bullets.push(new Bullet(pilot.x - 15, pilot.y));
+                    bullets.push(new Bullet(pilot.x + 15, pilot.y));
+                }
+            }
+
+            bullets.forEach((b, index) => {
+                b.update();
+                if (b.y < 0) bullets.splice(index, 1);
+
+                // Hit Enemy
+                enemies.forEach((e, ei) => {
+                    if (Math.abs(b.x - e.x) < 20 && Math.abs(b.y - e.y) < 20) {
+                        createExplosion(e.x, e.y, '#ff4757');
+                        enemies.splice(ei, 1);
+                        bullets.splice(index, 1);
+                        score += 10;
+                        document.getElementById('score-val').innerText = score.toString().padStart(4, '0');
+                        if (score % 500 === 0) triggerBoss();
+                    }
+                });
+
+                // Hit Boss
+                if (boss && b.x > boss.x - boss.w/2 && b.x < boss.x + boss.w/2 && b.y > boss.y && b.y < boss.y + boss.h) {
+                    boss.hp--;
+                    bullets.splice(index, 1);
+                    document.getElementById('hp-fill').style.width = (boss.hp/boss.maxHp * 100) + '%';
+                    if (boss.hp <= 0) {
+                        createExplosion(boss.x, boss.y, '#fff');
+                        boss = null; bossActive = false;
+                        document.getElementById('boss-hud').style.display = 'none';
+                        level++;
+                        document.getElementById('rank-val').innerText = "MK-" + level;
+                    }
+                }
+            });
+
+            enemies.forEach((e, i) => {
+                e.update();
+                if (e.y > canvas.height) enemies.splice(i, 1);
+                if (checkCollision(pilot, e)) endGame();
+            });
+
+            if (boss) boss.update();
+        }
+
+        function triggerBoss() {
+            bossActive = true;
+            const warning = document.getElementById('warning-overlay');
+            warning.style.display = 'block';
+            setTimeout(() => {
+                warning.style.display = 'none';
+                document.getElementById('boss-hud').style.display = 'block';
+                boss = new Boss();
+            }, 3000);
+        }
+
+        function draw() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = '#fff';
+            stars.forEach(st => ctx.fillRect(st.x, st.y, st.s, st.s));
+
+            particles.forEach(p => p.draw());
+            enemies.forEach(e => e.draw());
+            bullets.forEach(b => b.draw());
+            if (boss) boss.draw();
+            pilot.draw();
+        }
+
+        function endGame() {
+            gameActive = false;
+            document.getElementById('game-over').style.display = 'flex';
+            document.getElementById('final-score').innerText = score;
+        }
+
+        function animate() {
+            update();
+            draw();
+            requestAnimationFrame(animate);
+        }
+
+        spawnEnemies();
+        animate();
+
+    </script>
+</body>
+  </html>
